@@ -353,22 +353,20 @@ class User < ActiveRecord::Base
   end
 
   def self.search_users(role, user_id, letter, search_by)
-    if search_by == '1'  #search by user name
-      search_filter = '%' + letter + '%'
-      users = User.order('name').where( "(role_id in (?) or id = ?) and name like ?", role.get_available_roles, user_id, search_filter )
-    elsif search_by == '2' # search by full name
-      search_filter = '%' + letter + '%'
-      users = User.order('name').where( "(role_id in (?) or id = ?) and fullname like ?", role.get_available_roles, user_id, search_filter )
-    elsif search_by == '3' # search by email
-      search_filter = '%' + letter + '%'
-      users = User.order('name').where( "(role_id in (?) or id = ?) and email like ?", role.get_available_roles, user_id, search_filter )
-    else #default used when clicking on letters
-      search_filter = letter + '%'
-      users = User.order('name').where( "(role_id in (?) or id = ?) and name like ?", role.get_available_roles, user_id, search_filter )
+    case search_by
+      when '1' #search by user name
+        query_attribute ="name"
+      when '2' # search by full name
+        query_attribute ="fullname"
+      when '3' #search by user name
+        query_attribute ="email"
+      else
+        query_attribute ="name"
     end
+    users = fetch_results(role, user_id, letter, query_attribute)
     users
   end
-
+  
   def destroy_user(user)
     AssignmentParticipant.where(user_id: user.id).each{|participant| participant.delete}
     TeamsUser.where(user_id: user.id).each{|teamuser| teamuser.delete}
@@ -377,4 +375,11 @@ class User < ActiveRecord::Base
     user.destroy
   end
 
+  private
+  def fetch_results(role, user_id, letter, query_attribute)
+    search_filter = '%' + letter + '%'
+    users = User.order('name').where( "(role_id in (?) or id = ?) and #{query_attribute} like ?", role.get_available_roles, user_id, search_filter )
+    users
+  end
+  
 end
