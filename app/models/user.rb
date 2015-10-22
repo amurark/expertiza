@@ -80,64 +80,76 @@ class User < ActiveRecord::Base
 
     # If the user is a super admin, fetch all users
     if self.role.super_admin?
-      User.all.each do |user|
-        user_list << user
-      end
+      user_list = fetch_users_for_super_admin(user_list)
     end
 
     # If the user is an instructor, fetch all users in his course/assignment
     if self.role.instructor?
       participants = []
-      Course.where(instructor_id: self.id).each do |course|
-        participants << course.get_participants
-      end
-      Assignment.where(instructor_id: self.id).each do |assignment|
-        participants << assignment.participants
-      end
-      participants.each do |p_s|
-        if p_s.length > 0
-          p_s.each do |p|
-            if self.role.hasAllPrivilegesOf(p.user.role)
-              user_list << p.user
-            end
-          end
-        end
-      end
+      participants << fetch_users_for_course(participants)
+      participants << fetch_users_for_assignment(participants)
+      iterate_participants(participants)
     end
 
     # If the user is a TA, fetch all users in his courses
     if self.role.ta?
       courses = Ta.get_mapped_courses(self.id)
       participants = []
-      courses.each do |course_id|
-        course = Course.find(course_id)
-        participants << course.get_participants
-      end
-      participants.each do |p_s|
-        if p_s.length > 0
-          p_s.each do |p|
-            if self.role.hasAllPrivilegesOf(p.user.role)
-              user_list << p.user
-            end
-          end
-        end
-      end
+      participants << fetch_participants_for_courses(courses)
+      iterate_participants(participants)
     end
 
     # Add the children to the list
     unless self.role.super_admin?
-      User.all.each do |u|
-        if is_recursively_parent_of(u)
-          if not user_list.include?(u)
-            user_list << u
-          end
+      users = User.all
+      user_list << add_children(users, user_list)
+    end
+    user_list
+  end
+
+  def fetch_users_for_super_admin(user_list)
+    User.all.each do |user|
+      user_list << user
+    end
+    user_list
+  end
+
+  #For the instructor,fetches all users in his course
+  def fetch_users_for_course(participants)
+    Course.where(instructor_id: self.id).each do |course|
+      participants << course.get_participants
+    end
+    participants
+  end
+
+  #For the instructor,fetches all users in his course
+  def fetch_users_for_assignment(participants)
+    Assignment.where(instructor_id: self.id).each do |assignment|
+      participants << assignment.participants
+    end
+    participants
+  end
+
+  def fetch_participants_for_courses(courses)
+    courses.each do |course_id|
+      course = Course.find(course_id)
+      participants << course.get_participants
+    end
+    participants
+  end
+
+
+  def add_children(users, user_list)
+    users.each do |u|
+      if is_recursively_parent_of(u)
+        if not user_list.include?(u)
+          user_list << u
         end
       end
     end
-
     user_list
-
   end
+
 
   def first_name
     fullname.try(:[], /,.+/).try(:[], /\w+/) || ''
@@ -232,9 +244,9 @@ class User < ActiveRecord::Base
 
   def instructor_id
     case role.name
-    when 'Instructor' then id
-    when 'Teaching Assistant' then Ta.get_my_instructor(id)
-    else raise NotImplementedError.new "for role #{role.name}"
+      when 'Instructor' then id
+      when 'Teaching Assistant' then Ta.get_my_instructor(id)
+      else raise NotImplementedError.new "for role #{role.name}"
     end
   end
 
@@ -266,7 +278,7 @@ class User < ActiveRecord::Base
 
     # return the new private key
     new_key.to_pem
-    end
+  end
 
   def initialize(attributes = nil)
     super(attributes)
@@ -366,7 +378,7 @@ class User < ActiveRecord::Base
     users = fetch_results(role, user_id, letter, query_attribute)
     users
   end
-  
+
   def destroy_user(user)
     AssignmentParticipant.where(user_id: user.id).each{|participant| participant.delete}
     TeamsUser.where(user_id: user.id).each{|teamuser| teamuser.delete}
@@ -381,5 +393,17 @@ class User < ActiveRecord::Base
     users = User.order('name').where( "(role_id in (?) or id = ?) and #{query_attribute} like ?", role.get_available_roles, user_id, search_filter )
     users
   end
-  
+
+  def iterate_participants(participants)
+    participants.each do |p_s|
+      if p_s.length > 0
+        p_s.each do |p|
+          if self.role.hasAllPrivilegesOf(p.user.role)
+            user_list << p.user
+          end
+        end
+      end
+    end
+  end
+
 end
